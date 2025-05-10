@@ -1,0 +1,130 @@
+name: Build FreeRDP against Python libraries
+on: [push]
+
+jobs:
+  freerdp:
+    name: Build FreeRDP
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: cache-downloads-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: dl
+          key: download-4
+
+      - name: download
+        shell: pwsh
+        run: |
+          . ./main.ps1
+          Get-SecureDownload "dl/openssl.tar.gz" "openssl-3.4.1.tar.gz"
+          Get-SecureDownload "dl/freerdp.tar.gz" "freerdp-3.15.0.tar.gz"
+          Get-SecureDownload "dl/zlib.tar.gz"    "zlib-1.3.1.tar.gz"
+
+      - uses: actions/cache/save@v4
+        with:
+          path: dl
+          key: ${{ steps.cache-downloads-restore.outputs.cache-primary-key }}
+
+      - name: Build fake OpenSSL
+        shell: pwsh
+        run: |
+          . ./main.ps1
+
+          Enter-CompilerEnvironment
+          # Get-ChildItem -LiteralPath (Get-PythonEnvironment) -Include "*.dll" -Recurse
+
+          Invoke-MkdirP openssl
+          cd openssl
+          & tar --strip-components=1 -xf ../dl/openssl.tar.gz
+
+          # Configure, but don't actually build it. We will reuse the built DLLs from Python.
+          perl Configure VC-WIN64A-masm no-asm no-unit-test
+
+          # Build generated header files. For example, turn "opensslv.h.in" into "opensslv.h"
+          & nmake build_generated
+
+          Invoke-FakeCompileOpenSSL "$(Get-PythonEnvironment)/DLLs"
+
+      - name: Build fake Zlib
+        shell: pwsh
+        run: |
+          . ./main.ps1
+
+          Enter-CompilerEnvironment
+
+          Invoke-MkdirP zlib
+          & tar -C zlib --strip-components=1 -xf dl/zlib.tar.gz
+
+          # cmake -GNinja `
+          #     -B zlib-build `
+          #     -S zlib `
+          #     "-DCMAKE_INSTALL_PREFIX=$inst" `
+          #     -DCMAKE_BUILD_TYPE=Release `
+          #     -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON
+          # cmake --build zlib-build
+          # cmake --install zlib-build
+
+          cd zlib
+          Invoke-FakeCompileZlib "$(Get-PythonEnvironment)/DLLs"
+
+      - name: Build FreeRDP
+        shell: pwsh
+        run: |
+          . ./main.ps1
+
+          $inst = Resolve-LiteralPathForced "install"
+          $parent = Resolve-LiteralPathForced "."
+          Enter-CompilerEnvironment
+
+          Invoke-MkdirP freerdp
+          & tar -C freerdp --strip-components=1 -xf dl/freerdp.tar.gz
+
+          $Env:CC = "cl.exe"
+          $Env:CXX = "cl.exe"
+
+          # -DZLIB_ROOT_DIR=$parent/zlib-build
+          # "-DCMAKE_INSTALL_PREFIX=$inst" `
+
+          # "-DOPENSSL_INCLUDE_DIR=$parent/openssl/include" `
+          # "-DOPENSSL_CRYPTO_LIBRARY=$parent/openssl/libcrypto-3.dll" `
+          # "-DOPENSSL_SSL_LIBRARY=$parent/openssl/libssl-3.dll" `
+
+          & cmake -GNinja -S freerdp -B freerdp-build `
+              "-DOPENSSL_ROOT_DIR=$parent/openssl" `
+              "-DZLIB_INCLUDE_DIR=$parent/zlib" `
+              "-DZLIB_LIBRARY=$parent/zlib/zlib1.lib" `
+              -DCMAKE_BUILD_TYPE=Release `
+              -DCHANNEL_URBDRC=OFF `
+              -DMONOLITHIC_BUILD=ON `
+              -DWITH_JPEG=OFF `
+              -DWITH_SERVER=OFF -DWITH_SAMPLE=OFF -DWITH_PLATFORM_SERVER=OFF -DUSE_UNWIND=OFF -DWITH_WEBVIEW=OFF `
+              -DWITH_DSP_FFMPEG=OFF -DWITH_VIDEO_FFMPEG=OFF -DWITH_FFMPEG=OFF `
+              -DWITH_SWSCALE=OFF -DWITH_OPUS=OFF
+
+          & cmake --build freerdp-build
+
+      - name: Assemble outputs
+        shell: pwsh
+        run: |
+          . ./main.ps1
+
+          Invoke-MkdirP "freerdp-final"
+
+          $patterns = New-Object System.Collections.ArrayList
+          foreach ($x in @("freerdp*", "wfreerdp*", "winpr*")) {
+            foreach ($y in @(".dll", ".exp", ".lib", ".pdb", ".exe")) {
+              $patterns.Add("$x$y")
+            }
+          }
+          $patterns = [string[]]$patterns
+          $patterns | Write-Output
+          Get-ChildItem -LiteralPath "freerdp-build" -Recurse -Include $patterns `
+            | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination "freerdp-final" }
+
+      - name: Upload FreeRDP build
+        uses: actions/upload-artifact@v4
+        with:
+          name: freerdp
+          path: freerdp-final

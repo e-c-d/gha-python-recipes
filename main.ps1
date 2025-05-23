@@ -104,6 +104,43 @@ function Convert-DLLToLib {
     & lib "/def:$def" "/out:$lib"
 }
 
+function Prepare-FakeCompileOpenSSL {
+    Enter-CompilerEnvironment
+
+    Invoke-MkdirP openssl
+    cd openssl
+    & tar --strip-components=1 -xf ../dl/openssl.tar.gz
+
+    # Configure, but don't actually build it. We will reuse the built DLLs from Python.
+    perl Configure VC-WIN64A-masm no-asm no-unit-test
+
+    # Build generated header files. For example, turn "opensslv.h.in" into "opensslv.h"
+    & nmake build_generated
+
+    Invoke-FakeCompileOpenSSL "$(Get-PythonEnvironment)/DLLs"
+    cd ..
+}
+
+function Prepare-FakeCompileZlib {
+    Enter-CompilerEnvironment
+
+    Invoke-MkdirP zlib
+    & tar -C zlib --strip-components=1 -xf dl/zlib.tar.gz
+
+    # cmake -GNinja `
+    #     -B zlib-build `
+    #     -S zlib `
+    #     "-DCMAKE_INSTALL_PREFIX=$inst" `
+    #     -DCMAKE_BUILD_TYPE=Release `
+    #     -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON
+    # cmake --build zlib-build
+    # cmake --install zlib-build
+
+    cd zlib
+    Invoke-FakeCompileZlib "$(Get-PythonEnvironment)/DLLs"
+    cd ..
+}
+
 function Invoke-FakeCompileOpenSSL {
     param([string]$source)
 

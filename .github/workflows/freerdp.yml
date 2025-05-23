@@ -12,7 +12,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: dl
-          key: download-4
+          key: download-freerdp-4
 
       - name: download
         shell: pwsh
@@ -27,47 +27,12 @@ jobs:
           path: dl
           key: ${{ steps.cache-downloads-restore.outputs.cache-primary-key }}
 
-      - name: Build fake OpenSSL
+      - name: Build fake deps
         shell: pwsh
         run: |
           . ./main.ps1
-
-          Enter-CompilerEnvironment
-          # Get-ChildItem -LiteralPath (Get-PythonEnvironment) -Include "*.dll" -Recurse
-
-          Invoke-MkdirP openssl
-          cd openssl
-          & tar --strip-components=1 -xf ../dl/openssl.tar.gz
-
-          # Configure, but don't actually build it. We will reuse the built DLLs from Python.
-          perl Configure VC-WIN64A-masm no-asm no-unit-test
-
-          # Build generated header files. For example, turn "opensslv.h.in" into "opensslv.h"
-          & nmake build_generated
-
-          Invoke-FakeCompileOpenSSL "$(Get-PythonEnvironment)/DLLs"
-
-      - name: Build fake Zlib
-        shell: pwsh
-        run: |
-          . ./main.ps1
-
-          Enter-CompilerEnvironment
-
-          Invoke-MkdirP zlib
-          & tar -C zlib --strip-components=1 -xf dl/zlib.tar.gz
-
-          # cmake -GNinja `
-          #     -B zlib-build `
-          #     -S zlib `
-          #     "-DCMAKE_INSTALL_PREFIX=$inst" `
-          #     -DCMAKE_BUILD_TYPE=Release `
-          #     -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON
-          # cmake --build zlib-build
-          # cmake --install zlib-build
-
-          cd zlib
-          Invoke-FakeCompileZlib "$(Get-PythonEnvironment)/DLLs"
+          Prepare-FakeCompileOpenSSL
+          Prepare-FakeCompileZlib
 
       - name: Build FreeRDP
         shell: pwsh

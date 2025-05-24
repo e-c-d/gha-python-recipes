@@ -18,5 +18,9 @@
   "sqlcipher-4.9.0.zip": {
     "url": "https://www.zetetic.net/sqlcipher/verify/4.9.0/sqlcipher-4.9.0.zip",
     "hash_sha512": "9a65e7a33bc9fb108d44599fa9e8511b8879ceb3881e7693a73828fc32578b7e0c24c441e3820c83425441f4daef62bd613a8f7f429cb107a028e782354dbcb0"
+  },
+  "tcl-9.0.1.tar.gz": {
+    "url": "http://prdownloads.sourceforge.net/tcl/tcl9.0.1-src.tar.gz",
+    "hash_sha512": "8ef8289bd86b4cc2597d63f4b460fa4a67da66dbb1bafa29cb8cd960867d07636f12713ecb1a95a96bd6c284b6f0f4264ff96da2feeb52a5a9795f036fa346c3"
   }
 }

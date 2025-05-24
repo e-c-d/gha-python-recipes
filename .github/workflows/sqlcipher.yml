@@ -12,7 +12,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: dl
-          key: download-sqlcipher-4
+          key: download-sqlcipher-5
 
       - name: download
         shell: pwsh
@@ -20,7 +20,6 @@ jobs:
           . ./main.ps1
           Get-SecureDownload "dl/openssl.tar.gz" "openssl-3.4.1.tar.gz"
           Get-SecureDownload "dl/sqlcipher.zip"  "sqlcipher-4.9.0.zip"
-          Get-SecureDownload "dl/zlib.tar.gz"    "zlib-1.3.1.tar.gz"
 
       - uses: actions/cache/save@v4
         with:
@@ -32,7 +31,6 @@ jobs:
         run: |
           . ./main.ps1
           Prepare-FakeCompileOpenSSL
-          Prepare-FakeCompileZlib
 
       - name: Build SQLCipher
         shell: pwsh
@@ -42,17 +40,16 @@ jobs:
           $parent = Resolve-LiteralPathForced "."
 
           Enter-CompilerEnvironment
-          Invoke-MkdirP sqlcipher
           & unzip -d sqlcipher.tmp dl/sqlcipher.zip
           Move-Item sqlcipher.tmp/* sqlcipher
 
           cd sqlcipher
-          Invoke-MkdirP build
-          cd build
 
           $vopts = @(
             "-DSQLITE_TEMP_STORE=2",
             "-DSQLITE_HAS_CODEC=1",
+            "-DSQLITE_EXTRA_INIT=sqlcipher_extra_init",
+            "-DSQLITE_EXTRA_SHUTDOWN=sqlcipher_extra_shutdown",
 
             "-DSQLITE_ENABLE_COLUMN_METADATA=1",
             "-DSQLITE_ENABLE_DBSTAT_VTAB=1",
@@ -80,23 +77,25 @@ jobs:
             "-DSQLITE_THREADSAFE=1",
             "-DSQLITE_USE_URI=1",
 
-            "-I`"$parent\openssl\include`"",
+            "-DHAVE_STDINT_H=1",
+
+            "-I`"$parent\openssl\include`""
           )
 
           $opts = @(
             "NO_TCL=1", "USE_CRT_DLL=1", "WIN32HEAP=1",
             "LTLIBPATHS=`"/LIBPATH:$parent\openssl`"",
-            "LTLIBS=`"libcrypto.lib libssl.lib`"",
+            "LTLIBS=libcrypto.lib libssl.lib"
           )
 
           $Env:CC = "cl.exe"
           $Env:CXX = "cl.exe"
           $Env:OPTS = $vopts -join " "
 
-          & nmake /f ..\makefile.msc sqlite3.c TOP=.. @opts
-          & nmake /f ..\makefile.msc sqlite3.dll TOP=.. @opts
-          & nmake /f ..\makefile.msc sqlite3.exe TOP=.. @opts
-          # & nmake /f ..\makefile.msc test TOP=.. @opts
+          & nmake /f makefile.msc sqlite3.c @opts
+          & nmake /f makefile.msc sqlite3.dll @opts
+          & nmake /f makefile.msc sqlite3.exe @opts
+          # & nmake /f makefile.msc test @opts
 
       - name: Assemble outputs
         shell: pwsh
@@ -113,7 +112,7 @@ jobs:
           }
           $patterns = [string[]]$patterns
           $patterns | Write-Output
-          Get-ChildItem -LiteralPath "sqlcipher/build" -Recurse -Include $patterns `
+          Get-ChildItem -LiteralPath "sqlcipher" -Recurse -Include $patterns `
             | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination "sqlcipher-final" }
 
       - name: Upload SQLCipher build

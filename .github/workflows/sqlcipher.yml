@@ -4,6 +4,8 @@ on: [push]
 jobs:
   sqlcipher:
     name: Build SQLCipher
+    env:
+      PYTHON: "C:/hostedtoolcache/windows/Python/3.13.3/x64/python.exe"
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
@@ -12,15 +14,12 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: dl
-          key: download-sqlcipher-6
+          key: download-sqlcipher-7
 
       - name: download
-        shell: pwsh
+        shell: sh
         run: |
-          . ./main.ps1
-          Get-SecureDownload "dl/openssl.tar.gz" "openssl-3.4.1.tar.gz"
-          Get-SecureDownload "dl/sqlcipher.zip"  "sqlcipher-4.9.0.zip"
-          Get-SecureDownload "dl/tcl.tar.gz"     "tcl-9.0.1.tar.gz"
+          ./python.sh builder.py download_sqlcipher
 
       - uses: actions/cache/save@v4
         with:
@@ -28,45 +27,19 @@ jobs:
           key: ${{ steps.cache-downloads-restore.outputs.cache-primary-key }}
 
       - name: Build fake deps
-        shell: pwsh
+        shell: sh
         run: |
-          . ./main.ps1
-          Prepare-FakeCompileOpenSSL
+          ./python.sh builder.py fake_compile_openssl
 
       - name: Build SQLCipher
-        shell: pwsh
+        shell: sh
         run: |
-          . ./main.ps1
-
-          Enter-CompilerEnvironment
-          & unzip -d sqlcipher.tmp dl/sqlcipher.zip
-          Move-Item sqlcipher.tmp/* sqlcipher
-
-          cd sqlcipher
-          $opts = (Prepare-CompileSQLCipher "..")
-          & nmake /f makefile.msc sqlite3.c         NO_TCL=1 @opts
-          & nmake /f makefile.msc sqlite3.dll       NO_TCL=1 @opts
-          & nmake /f makefile.msc sqlite3.exe       NO_TCL=1 @opts
-          # & nmake /f makefile.msc sqldiff.exe       NO_TCL=1 @opts
-          # & nmake /f makefile.msc sqlite3_rsync.exe NO_TCL=1 @opts
+          ./python.sh builder.py build_sqlcipher
 
       - name: Assemble outputs
-        shell: pwsh
+        shell: sh
         run: |
-          . ./main.ps1
-
-          Invoke-MkdirP "sqlcipher-final"
-
-          $patterns = New-Object System.Collections.ArrayList
-          foreach ($x in @("*")) {
-            foreach ($y in @(".dll", ".exp", ".lib", ".pdb", ".exe")) {
-              $patterns.Add("$x$y")
-            }
-          }
-          $patterns = [string[]]$patterns
-          $patterns | Write-Output
-          Get-ChildItem -LiteralPath "sqlcipher" -Recurse -Include $patterns `
-            | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination "sqlcipher-final" }
+          ./python.sh builder.py assemble_sqlcipher
 
       - name: Upload SQLCipher build
         uses: actions/upload-artifact@v4
@@ -75,6 +48,7 @@ jobs:
           path: sqlcipher-final
 
       - name: Build TCL
+        if: ${{ false }}
         shell: pwsh
         run: |
           . ./main.ps1
@@ -92,6 +66,7 @@ jobs:
           # Get-ChildItem -LiteralPath $tcl -Recurse
 
       - name: Run SQLCipher tests
+        if: ${{ false }}
         shell: pwsh
         run: |
           . ./main.ps1

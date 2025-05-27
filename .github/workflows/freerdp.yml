@@ -4,6 +4,8 @@ on: [push]
 jobs:
   freerdp:
     name: Build FreeRDP
+    env:
+      PYTHON: "C:/hostedtoolcache/windows/Python/3.13.3/x64/python.exe"
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
@@ -12,15 +14,12 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: dl
-          key: download-freerdp-4
+          key: download-freerdp-8
 
       - name: download
-        shell: pwsh
+        shell: sh
         run: |
-          . ./main.ps1
-          Get-SecureDownload "dl/openssl.tar.gz" "openssl-3.4.1.tar.gz"
-          Get-SecureDownload "dl/freerdp.tar.gz" "freerdp-3.15.0.tar.gz"
-          Get-SecureDownload "dl/zlib.tar.gz"    "zlib-1.3.1.tar.gz"
+          ./python.sh builder.py download_freerdp
 
       - uses: actions/cache/save@v4
         with:
@@ -28,65 +27,20 @@ jobs:
           key: ${{ steps.cache-downloads-restore.outputs.cache-primary-key }}
 
       - name: Build fake deps
-        shell: pwsh
+        shell: sh
         run: |
-          . ./main.ps1
-          Prepare-FakeCompileOpenSSL
-          Prepare-FakeCompileZlib
+          ./python.sh builder.py fake_compile_openssl
+          ./python.sh builder.py fake_compile_zlib
 
       - name: Build FreeRDP
-        shell: pwsh
+        shell: sh
         run: |
-          . ./main.ps1
-
-          $inst = Resolve-LiteralPathForced "install"
-          $parent = Resolve-LiteralPathForced "."
-          Enter-CompilerEnvironment
-
-          Invoke-MkdirP freerdp
-          & tar -C freerdp --strip-components=1 -xf dl/freerdp.tar.gz
-
-          $Env:CC = "cl.exe"
-          $Env:CXX = "cl.exe"
-
-          # -DZLIB_ROOT_DIR=$parent/zlib-build
-          # "-DCMAKE_INSTALL_PREFIX=$inst" `
-
-          # "-DOPENSSL_INCLUDE_DIR=$parent/openssl/include" `
-          # "-DOPENSSL_CRYPTO_LIBRARY=$parent/openssl/libcrypto-3.dll" `
-          # "-DOPENSSL_SSL_LIBRARY=$parent/openssl/libssl-3.dll" `
-
-          & cmake -GNinja -S freerdp -B freerdp-build `
-              "-DOPENSSL_ROOT_DIR=$parent/openssl" `
-              "-DZLIB_INCLUDE_DIR=$parent/zlib" `
-              "-DZLIB_LIBRARY=$parent/zlib/zlib1.lib" `
-              -DCMAKE_BUILD_TYPE=Release `
-              -DCHANNEL_URBDRC=OFF `
-              -DMONOLITHIC_BUILD=ON `
-              -DWITH_JPEG=OFF `
-              -DWITH_SERVER=OFF -DWITH_SAMPLE=OFF -DWITH_PLATFORM_SERVER=OFF -DUSE_UNWIND=OFF -DWITH_WEBVIEW=OFF `
-              -DWITH_DSP_FFMPEG=OFF -DWITH_VIDEO_FFMPEG=OFF -DWITH_FFMPEG=OFF `
-              -DWITH_SWSCALE=OFF -DWITH_OPUS=OFF
-
-          & cmake --build freerdp-build
+          ./python.sh builder.py build_freerdp
 
       - name: Assemble outputs
-        shell: pwsh
+        shell: sh
         run: |
-          . ./main.ps1
-
-          Invoke-MkdirP "freerdp-final"
-
-          $patterns = New-Object System.Collections.ArrayList
-          foreach ($x in @("freerdp*", "wfreerdp*", "winpr*")) {
-            foreach ($y in @(".dll", ".exp", ".lib", ".pdb", ".exe")) {
-              $patterns.Add("$x$y")
-            }
-          }
-          $patterns = [string[]]$patterns
-          $patterns | Write-Output
-          Get-ChildItem -LiteralPath "freerdp-build" -Recurse -Include $patterns `
-            | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination "freerdp-final" }
+          ./python.sh builder.py assemble_freerdp
 
       - name: Upload FreeRDP build
         uses: actions/upload-artifact@v4

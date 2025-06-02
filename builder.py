@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import typing as ty
 import tarfile
 import zipfile
 import dataclasses
@@ -18,6 +20,7 @@ import sys
 
 
 here = Path(__file__).resolve().parent
+metadata_json = json.loads((here / "metadata.json").read_bytes())
 
 
 PathLike = str | Path
@@ -26,6 +29,70 @@ PathLike = str | Path
 def run(args, **kwargs):
     print(args)
     return sbp.run(args, **kwargs)
+
+
+@dataclasses.dataclass(eq=False)
+class DirectoryHash:
+    """Simple recursive directory hasher"""
+
+    hash_function: callable
+    _buf_size = 65536
+
+    def __call__(self, path: Path | str) -> bytes:
+        path = Path(path)
+        if path.is_symlink():
+            meth = self._get_data_for_symlink
+        elif path.is_dir():
+            meth = self._get_data_for_directory
+        elif path.is_file():
+            meth = self._get_data_for_file
+        else:
+            raise AssertionError("invalid file type: {path!r}")
+
+        h = self.hash_function()
+        for data in meth(path):
+            h.update(data)
+        return h.digest()
+
+    @staticmethod
+    def _lencode(s: bytes) -> ty.Iterable[bytes]:
+        """prefix the string with its length"""
+        return str(len(s)).encode("ascii"), b",", s
+
+    @staticmethod
+    def _fs_encode(s: str | Path) -> bytes:
+        return str(s).encode("utf-8")
+
+    def _get_data_for_file(self, path: Path):
+        yield b"f"
+        with path.open("rb") as f:
+            while block := f.read(self._buf_size):
+                yield block
+
+    def _get_data_for_symlink(self, path: Path):
+        target = self._fs_encode(path.readlink())
+        yield b"l"
+        yield from self._lencode(target)
+
+    def _get_data_for_directory(self, path: Path):
+        yield b"d"
+
+        # encode child names as utf-8, then sort lexicographically
+        enc = self._fs_encode
+        items = [(enc(p.name), p) for p in path.iterdir()]
+        items.sort()
+
+        for p_name, p in items:
+            yield from self._lencode(p_name)
+            yield self(p)  # recurse into child
+
+
+def cmd_hash():
+    hash_name = sys.argv[2]
+    hash_function = lambda: hashlib.new(hash_name)
+    dih = DirectoryHash(hash_function)
+    for path in sys.argv[3:]:
+        print(dih(path).hex())
 
 
 def _prepare_for_extract(p: str | PurePosixPath, n: int, out: Path) -> PurePosixPath | None:
@@ -65,6 +132,19 @@ def unpack_tar(path_source: Path, path_target: Path, strip_components: int = 0) 
             zf.makefile(info, str(p))
 
 
+@contextlib.contextmanager
+def verifying_dir_hash(target: Path, hash_function, hash_value: str):
+    target.parent.mkdir(exist_ok=True, parents=True)
+    if target.exists():
+        raise ValueError("already exists: {target!s}")
+    with tempfile.TemporaryDirectory(dir=target.parent, prefix="unverified.") as tmpdir:
+        (tmp_location := Path(tmpdir) / "p").mkdir()
+        yield tmp_location
+        if DirectoryHash(hash_function)(tmp_location).hex().lower() != hash_value.lower():
+            raise ValueError("directory content hash does not match")
+        tmp_location.rename(target)
+
+
 @dataclasses.dataclass(eq=False)
 class StreamProcessorHash:
     hash_function: object
@@ -94,7 +174,7 @@ class Downloader:
 
     def __post_init__(self):
         if self.data is None:
-            self.data = json.loads((here / "downloads.json").read_bytes())
+            self.data = metadata_json["downloads"]
 
     def download(self, name: str, target: PathLike) -> None:
         target = Path(target)
@@ -123,7 +203,11 @@ class Downloader:
                         processor(block)
                     fw.write(block)
 
-            hasher.assert_hex_digest(meta["hash_sha512"])
+            if h := meta.get("hash_sha512"):
+                hasher.assert_hex_digest(h)
+            else:
+                if not target.name.startswith("unverified-"):
+                    raise AssertionError('filename must start with "unverified-" when no hash')
             path_tmp.rename(target)
 
 
@@ -180,6 +264,12 @@ def cmd_download_sqlcipher():
     dl.download("sqlcipher-4.9.0.zip", "dl/sqlcipher.zip")
     dl.download("openssl-3.4.1.tar.gz", "dl/openssl.tar.gz")
     # dl.download("tcl-9.0.1.tar.gz", "dl/tcl.tar.gz")  # tests don't work yet
+
+
+def cmd_download_stoken_bfasst():
+    dl = Downloader()
+    dl.download("stoken_bfasst-1.1.0.tar.gz", "dl/unverified-stoken_bfasst.tar.gz")
+    dl.download("openssl-3.4.1.tar.gz", "dl/openssl.tar.gz")
 
 
 def cmd_download_freerdp():
@@ -299,6 +389,21 @@ def cmd_build_sqlcipher(
         run(_make_command([x]), **kw)
 
 
+def cmd_build_stoken_bfasst():
+    path_openssl = _Path("openssl")
+    path_sb = _Path("stoken_bfasst")
+    with verifying_dir_hash(
+        path_sb,
+        lambda: hashlib.new("sha512"),
+        metadata_json["dir_hash_sha512"]["stoken_bfasst-1.1.0"],
+    ) as d:
+        unpack_tar("dl/unverified-stoken_bfasst.tar.gz", d, strip_components=1)
+
+    env = os.environ.copy()
+    env["STOKEN_BFASST_CMAKE_OPTS"] = json.dumps(["-GNinja", f"-DOPENSSL_ROOT_DIR={path_openssl!s}"])
+    run([sys.executable, "setup.py", "bdist_wheel"], cwd=str(path_sb), env=env)
+
+
 def _assemble(source, target, rx):
     target.mkdir(parents=True, exist_ok=True)
     for p in source.glob("**/*"):
@@ -320,6 +425,13 @@ def cmd_assemble_freerdp():
     _assemble(source, target, rx)
 
 
+def cmd_assemble_stoken_bfasst():
+    target = _Path("stoken_bfasst-final")
+    source = _Path("stoken_bfasst") / "dist"
+    rx = re.compile(r"\.whl$")
+    _assemble(source, target, rx)
+
+
 def _Path(p):
     return Path(p).resolve()
 
@@ -329,7 +441,7 @@ def cmd_build_freerdp(
     path_zlib: PathLike = "zlib",
     path_freerdp: PathLike = "freerdp",
     path_freerdp_build: PathLike = "freerdp-build",
-    path_freerdp_dl: PathLike="dl/freerdp.tar.gz",
+    path_freerdp_dl: PathLike = "dl/freerdp.tar.gz",
 ):
     path_openssl = _Path(path_openssl)
     path_zlib = _Path(path_zlib)
@@ -369,8 +481,10 @@ def cmd_build_freerdp(
 
 
 def main():
-    fix_env(os.environ)
-    globals()["cmd_" + sys.argv[1]]()
+    name = sys.argv[1]
+    if name != "hash":
+        fix_env(os.environ)
+    globals()["cmd_" + name]()
 
 
 if __name__ == "__main__":

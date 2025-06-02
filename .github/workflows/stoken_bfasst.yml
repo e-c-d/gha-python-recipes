@@ -1,9 +1,9 @@
-name: Build FreeRDP against Python libraries
+name: Build stoken_bfasst against Python libraries
 on: [push]
 
 jobs:
-  freerdp:
-    name: Build FreeRDP
+  stoken_bfasst:
+    name: Build stoken_bfasst
     env:
       PYTHON: "C:/hostedtoolcache/windows/Python/3.13.3/x64/python.exe"
     runs-on: windows-2022
@@ -14,12 +14,12 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: dl
-          key: download-freerdp-8
+          key: download-stoken_bfasst-1
 
       - name: download
         shell: sh
         run: |
-          ./python.sh builder.py download_freerdp
+          ./python.sh builder.py download_stoken_bfasst
 
       - uses: actions/cache/save@v4
         with:
@@ -30,20 +30,20 @@ jobs:
         shell: sh
         run: |
           ./python.sh builder.py fake_compile_openssl
-          ./python.sh builder.py fake_compile_zlib
 
-      - name: Build FreeRDP
+      - name: Build stoken_bfasst
         shell: sh
         run: |
-          ./python.sh builder.py build_freerdp
+          ./python.sh -m pip install setuptools
+          ./python.sh builder.py build_stoken_bfasst
 
       - name: Assemble outputs
         shell: sh
         run: |
-          ./python.sh builder.py assemble_freerdp
+          ./python.sh builder.py assemble_stoken_bfasst
 
       - name: Upload build
         uses: actions/upload-artifact@v4
         with:
-          name: freerdp
-          path: freerdp-final
+          name: stoken_bfasst
+          path: stoken_bfasst-final

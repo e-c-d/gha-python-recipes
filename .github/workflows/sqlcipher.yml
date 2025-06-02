@@ -41,7 +41,7 @@ jobs:
         run: |
           ./python.sh builder.py assemble_sqlcipher
 
-      - name: Upload SQLCipher build
+      - name: Upload build
         uses: actions/upload-artifact@v4
         with:
           name: sqlcipher

@@ -14,12 +14,12 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: dl
-          key: download-freerdp-8
+          key: download-freerdp-9
 
       - name: download
         shell: sh
         run: |
-          ./python.sh builder.py download_freerdp
+          ./python.sh -m builder download_freerdp
 
       - uses: actions/cache/save@v4
         with:
@@ -29,18 +29,18 @@ jobs:
       - name: Build fake deps
         shell: sh
         run: |
-          ./python.sh builder.py fake_compile_openssl
-          ./python.sh builder.py fake_compile_zlib
+          ./python.sh -m builder fake_compile_openssl
+          ./python.sh -m builder fake_compile_zlib
 
       - name: Build FreeRDP
         shell: sh
         run: |
-          ./python.sh builder.py build_freerdp
+          ./python.sh -m builder build_freerdp
 
       - name: Assemble outputs
         shell: sh
         run: |
-          ./python.sh builder.py assemble_freerdp
+          ./python.sh -m builder assemble_freerdp
 
       - name: Upload build
         uses: actions/upload-artifact@v4

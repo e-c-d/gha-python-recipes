@@ -14,12 +14,12 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: dl
-          key: download-stoken_bfasst-1
+          key: download-stoken_bfasst-3
 
       - name: download
         shell: sh
         run: |
-          ./python.sh builder.py download_stoken_bfasst
+          ./python.sh -m builder download_stoken_bfasst
 
       - uses: actions/cache/save@v4
         with:
@@ -29,18 +29,19 @@ jobs:
       - name: Build fake deps
         shell: sh
         run: |
-          ./python.sh builder.py fake_compile_openssl
+          ./python.sh -m builder fake_compile_openssl
 
       - name: Build stoken_bfasst
         shell: sh
         run: |
-          ./python.sh -m pip install setuptools
-          ./python.sh builder.py build_stoken_bfasst
+          # FIXME: pin setuptools by hash
+          ./python.sh -m builder install_setuptools
+          ./python.sh -m builder build_stoken_bfasst
 
       - name: Assemble outputs
         shell: sh
         run: |
-          ./python.sh builder.py assemble_stoken_bfasst
+          ./python.sh -m builder assemble_stoken_bfasst
 
       - name: Upload build
         uses: actions/upload-artifact@v4

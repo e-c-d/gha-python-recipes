@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import contextlib
-import typing as ty
 import tarfile
 import zipfile
 import dataclasses
@@ -18,6 +17,9 @@ import os
 import re
 import sys
 
+from .dirhash import DirectoryHash
+from .pypi_simple import pypi_resolve_url
+
 
 here = Path(__file__).resolve().parent
 metadata_json = json.loads((here / "metadata.json").read_bytes())
@@ -29,62 +31,6 @@ PathLike = str | Path
 def run(args, **kwargs):
     print(args)
     return sbp.run(args, **kwargs)
-
-
-@dataclasses.dataclass(eq=False)
-class DirectoryHash:
-    """Simple recursive directory hasher"""
-
-    hash_function: callable
-    _buf_size = 65536
-
-    def __call__(self, path: Path | str) -> bytes:
-        path = Path(path)
-        if path.is_symlink():
-            meth = self._get_data_for_symlink
-        elif path.is_dir():
-            meth = self._get_data_for_directory
-        elif path.is_file():
-            meth = self._get_data_for_file
-        else:
-            raise AssertionError("invalid file type: {path!r}")
-
-        h = self.hash_function()
-        for data in meth(path):
-            h.update(data)
-        return h.digest()
-
-    @staticmethod
-    def _lencode(s: bytes) -> ty.Iterable[bytes]:
-        """prefix the string with its length"""
-        return str(len(s)).encode("ascii"), b",", s
-
-    @staticmethod
-    def _fs_encode(s: str | Path) -> bytes:
-        return str(s).encode("utf-8")
-
-    def _get_data_for_file(self, path: Path):
-        yield b"f"
-        with path.open("rb") as f:
-            while block := f.read(self._buf_size):
-                yield block
-
-    def _get_data_for_symlink(self, path: Path):
-        target = self._fs_encode(path.readlink())
-        yield b"l"
-        yield from self._lencode(target)
-
-    def _get_data_for_directory(self, path: Path):
-        yield b"d"
-
-        # encode child names as utf-8, then sort lexicographically
-        enc = self._fs_encode
-        items = [(enc(p.name), p) for p in path.iterdir()]
-        items.sort()
-
-        for p_name, p in items:
-            yield from self._lencode(p_name)
-            yield self(p)  # recurse into child
 
 
 def cmd_hash():
@@ -177,10 +123,20 @@ class Downloader:
             self.data = metadata_json["downloads"]
 
     def download(self, name: str, target: PathLike) -> None:
-        target = Path(target)
+        if isinstance(target, str) and target.endswith("/"):
+            target = Path(target) / name
+        else:
+            target = Path(target)
+
         meta = self.data[name]
         target.parent.mkdir(exist_ok=True, parents=True)
-        req = _ur.Request(meta["url"], headers={"User-Agent": "Wget/1.21.3"})
+
+        url = meta["url"]
+        if url.endswith("#"):
+            url = f"{url}/{name}"
+        url = pypi_resolve_url(url)
+
+        req = _ur.Request(url, headers={"User-Agent": "Wget/1.21.3"})
         size_buf = 65536
         processors = [StreamProcessorSizeLimiter(10**8)]
         processors.append(hasher := StreamProcessorHash(hashlib.sha512()))
@@ -268,7 +224,8 @@ def cmd_download_sqlcipher():
 
 def cmd_download_stoken_bfasst():
     dl = Downloader()
-    dl.download("stoken_bfasst-1.1.0.tar.gz", "dl/unverified-stoken_bfasst.tar.gz")
+    dl.download("setuptools-80.1.0-py3-none-any.whl", "dl/")
+    dl.download("stoken_bfasst-1.1.0.tar.gz", "dl/")
     dl.download("openssl-3.4.1.tar.gz", "dl/openssl.tar.gz")
 
 
@@ -389,19 +346,35 @@ def cmd_build_sqlcipher(
         run(_make_command([x]), **kw)
 
 
+def pipi(paths):
+    cmd = [sys.executable, "-m", "pip", "install", "--no-index"]
+    cmd += "--no-build-isolation", "--break-system-packages"
+    cmd += (str(Path(p).resolve()) for p in paths)
+    run(cmd, check=True)
+
+
+def cmd_install_setuptools():
+    pipi(Path("dl").glob("setuptools-*.whl"))
+
+
 def cmd_build_stoken_bfasst():
     path_openssl = _Path("openssl")
     path_sb = _Path("stoken_bfasst")
-    with verifying_dir_hash(
-        path_sb,
-        lambda: hashlib.new("sha512"),
-        metadata_json["dir_hash_sha512"]["stoken_bfasst-1.1.0"],
-    ) as d:
-        unpack_tar("dl/unverified-stoken_bfasst.tar.gz", d, strip_components=1)
+
+    # with verifying_dir_hash(
+    #     path_sb,
+    #     lambda: hashlib.new("sha512"),
+    #     metadata_json["dir_hash_sha512"]["stoken_bfasst-1.1.0"],
+    # ) as d:
+    #     unpack_tar("dl/unverified-stoken_bfasst.tar.gz", d, strip_components=1)
+
+    [archive] = _Path("dl").glob("stoken_bfasst*.tar.gz")
+    unpack_tar(archive, path_sb, strip_components=1)
 
     env = os.environ.copy()
-    env["STOKEN_BFASST_CMAKE_OPTS"] = json.dumps(["-GNinja", f"-DOPENSSL_ROOT_DIR={path_openssl!s}"])
-    run([sys.executable, "setup.py", "bdist_wheel"], cwd=str(path_sb), env=env)
+    opts = ["-GNinja", f"-DOPENSSL_ROOT_DIR={path_openssl!s}"]
+    env["STOKEN_BFASST_CMAKE_OPTS"] = json.dumps(opts)
+    run([sys.executable, "setup.py", "bdist_wheel"], cwd=str(path_sb), env=env, check=True)
 
 
 def _assemble(source, target, rx):

@@ -288,8 +288,6 @@ def cmd_build_sqlcipher(
 
     unpack_zip(path_sqlcipher_dl, path_sqlcipher, strip_components=1)
 
-    kw = dict(check=True, cwd=str(path_sqlcipher))
-
     env_opts = (
         "-DSQLITE_TEMP_STORE=2",
         "-DSQLITE_HAS_CODEC=1",
@@ -341,6 +339,10 @@ def cmd_build_sqlcipher(
         xs.append("NO_TCL=1")
         xs += opts
         return xs
+
+    env = os.environ | {"OPTS": env_opts}
+    env["CC"] = env["CXX"] = "cl.exe"
+    kw = dict(check=True, cwd=str(path_sqlcipher), env=env)
 
     for x in ("sqlite3.c", "sqlite3.dll", "sqlite3.exe"):
         run(_make_command([x]), **kw)

@@ -288,42 +288,42 @@ def cmd_build_sqlcipher(
 
     unpack_zip(path_sqlcipher_dl, path_sqlcipher, strip_components=1)
 
-    env_opts = (
-        "-DSQLITE_TEMP_STORE=2",
-        "-DSQLITE_HAS_CODEC=1",
-        "-DSQLITE_EXTRA_INIT=sqlcipher_extra_init",
-        "-DSQLITE_EXTRA_SHUTDOWN=sqlcipher_extra_shutdown",
-        "-DSQLITE_ENABLE_COLUMN_METADATA=1",
-        "-DSQLITE_ENABLE_DBSTAT_VTAB=1",
-        "-DSQLITE_ENABLE_FTS3=1",
-        "-DSQLITE_ENABLE_FTS3_PARENTHESIS=1",
-        "-DSQLITE_ENABLE_FTS3_TOKENIZER=1",
-        "-DSQLITE_ENABLE_FTS4=1",
-        "-DSQLITE_ENABLE_FTS5=1",
-        "-DSQLITE_ENABLE_JSON1=1",
-        "-DSQLITE_ENABLE_GEOPOLY=1",
-        "-DSQLITE_ENABLE_LOAD_EXTENSION=1",
-        "-DSQLITE_ENABLE_PREUPDATE_HOOK=1",
-        "-DSQLITE_ENABLE_RTREE=1",
-        "-DSQLITE_ENABLE_SESSION=1",
-        "-DSQLITE_ENABLE_STAT4=1",
-        "-DSQLITE_ENABLE_STMTVTAB=1",
-        "-DSQLITE_ENABLE_UNLOCK_NOTIFY=1",
-        "-DSQLITE_ENABLE_UPDATE_DELETE_LIMIT=1",
-        "-DSQLITE_ENABLE_SERIALIZE=1",
-        "-DSQLITE_ENABLE_MATH_FUNCTIONS=1",
-        "-DSQLITE_HAVE_ISNAN=1",
-        "-DSQLITE_LIKE_DOESNT_MATCH_BLOBS=1",
-        "-DSQLITE_MAX_SCHEMA_RETRY=50",
-        "-DSQLITE_MAX_VARIABLE_NUMBER=250000",
-        "-DSQLITE_OMIT_LOOKASIDE=1",
-        "-DSQLITE_SECURE_DELETE=1",
-        "-DSQLITE_SOUNDEX=1",
-        "-DSQLITE_THREADSAFE=1",
-        "-DSQLITE_USE_URI=1",
-        "-DHAVE_STDINT_H=1",
-        f'-I"{path_openssl}/include"',
-    )
+    env_opts = [f'-I"{path_openssl}/include"']
+    env_opts += """
+-DSQLITE_TEMP_STORE=2
+-DSQLITE_HAS_CODEC=1
+-DSQLITE_EXTRA_INIT=sqlcipher_extra_init
+-DSQLITE_EXTRA_SHUTDOWN=sqlcipher_extra_shutdown
+-DSQLITE_ENABLE_COLUMN_METADATA=1
+-DSQLITE_ENABLE_DBSTAT_VTAB=1
+-DSQLITE_ENABLE_FTS3=1
+-DSQLITE_ENABLE_FTS3_PARENTHESIS=1
+-DSQLITE_ENABLE_FTS3_TOKENIZER=1
+-DSQLITE_ENABLE_FTS4=1
+-DSQLITE_ENABLE_FTS5=1
+-DSQLITE_ENABLE_JSON1=1
+-DSQLITE_ENABLE_GEOPOLY=1
+-DSQLITE_ENABLE_LOAD_EXTENSION=1
+-DSQLITE_ENABLE_PREUPDATE_HOOK=1
+-DSQLITE_ENABLE_RTREE=1
+-DSQLITE_ENABLE_SESSION=1
+-DSQLITE_ENABLE_STAT4=1
+-DSQLITE_ENABLE_STMTVTAB=1
+-DSQLITE_ENABLE_UNLOCK_NOTIFY=1
+-DSQLITE_ENABLE_UPDATE_DELETE_LIMIT=1
+-DSQLITE_ENABLE_SERIALIZE=1
+-DSQLITE_ENABLE_MATH_FUNCTIONS=1
+-DSQLITE_HAVE_ISNAN=1
+-DSQLITE_LIKE_DOESNT_MATCH_BLOBS=1
+-DSQLITE_MAX_SCHEMA_RETRY=50
+-DSQLITE_MAX_VARIABLE_NUMBER=250000
+-DSQLITE_OMIT_LOOKASIDE=1
+-DSQLITE_SECURE_DELETE=1
+-DSQLITE_SOUNDEX=1
+-DSQLITE_THREADSAFE=1
+-DSQLITE_USE_URI=1
+-DHAVE_STDINT_H=1
+""".split()
     env_opts = " ".join(env_opts)
 
     opts = (
@@ -349,8 +349,8 @@ def cmd_build_sqlcipher(
 
 
 def pipi(paths):
-    cmd = [sys.executable, "-m", "pip", "install", "--no-index"]
-    cmd += "--no-build-isolation", "--break-system-packages"
+    cmd = [sys.executable]
+    cmd += "-m pip install --no-index --no-build-isolation --break-system-packages".split()
     cmd += (str(Path(p).resolve()) for p in paths)
     run(cmd, check=True)
 
